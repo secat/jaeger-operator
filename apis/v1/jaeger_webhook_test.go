@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -13,12 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var (
-	_ webhook.Defaulter = &Jaeger{}
-	_ webhook.Validator = &Jaeger{}
+	_ admission.Defaulter[*Jaeger] = &Jaeger{}
+	_ admission.Validator[*Jaeger] = &Jaeger{}
 )
 
 func TestDefault(t *testing.T) {
@@ -176,14 +177,14 @@ func TestDefault(t *testing.T) {
 			fakeCl := fake.NewClientBuilder().WithRuntimeObjects(test.objs...).Build()
 			cl = fakeCl
 
-			test.j.Default()
+			_ = test.j.Default(context.Background(), nil)
 			assert.Equal(t, test.expected, test.j)
 		})
 	}
 }
 
 func TestValidateDelete(t *testing.T) {
-	warnings, err := new(Jaeger).ValidateDelete()
+	warnings, err := new(Jaeger).ValidateDelete(context.Background(), nil)
 	assert.Nil(t, warnings)
 	require.NoError(t, err)
 }
@@ -283,7 +284,7 @@ func TestValidate(t *testing.T) {
 			fakeCl := fake.NewClientBuilder().WithRuntimeObjects(test.objsToCreate...).Build()
 			cl = fakeCl
 
-			warnings, err := test.current.ValidateCreate()
+			warnings, err := test.current.ValidateCreate(context.Background(), nil)
 			if test.err != "" {
 				require.Error(t, err)
 				assert.Equal(t, test.err, err.Error())

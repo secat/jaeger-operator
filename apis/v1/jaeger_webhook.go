@@ -7,7 +7,6 @@ import (
 
 	esv1 "github.com/openshift/elasticsearch-operator/apis/logging/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,8 +27,7 @@ var (
 // SetupWebhookWithManager adds Jaeger webook to the manager.
 func (j *Jaeger) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	cl = mgr.GetClient()
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(j).
+	return ctrl.NewWebhookManagedBy(mgr, j).
 		Complete()
 }
 
@@ -43,7 +41,7 @@ func (j *Jaeger) objsWithOptions() []*Options {
 }
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (j *Jaeger) Default() {
+func (j *Jaeger) Default(ctx context.Context, _ *Jaeger) error {
 	jaegerlog.Info("default", "name", j.Name)
 	jaegerlog.Info("WARNING jaeger-agent is deprecated and will removed in v1.55.0. See https://github.com/jaegertracing/jaeger/issues/4739", "component", "agent")
 
@@ -54,12 +52,12 @@ func (j *Jaeger) Default() {
 	if ShouldInjectOpenShiftElasticsearchConfiguration(j.Spec.Storage) && j.Spec.Storage.Elasticsearch.DoNotProvision {
 		// check if ES instance exists
 		es := &esv1.Elasticsearch{}
-		err := cl.Get(context.Background(), types.NamespacedName{
+		err := cl.Get(ctx, types.NamespacedName{
 			Namespace: j.Namespace,
 			Name:      j.Spec.Storage.Elasticsearch.Name,
 		}, es)
 		if errors.IsNotFound(err) {
-			return
+			return err
 		}
 		j.Spec.Storage.Elasticsearch.NodeCount = OpenShiftElasticsearchNodeCount(es.Spec)
 	}
@@ -74,28 +72,31 @@ func (j *Jaeger) Default() {
 
 			if err := opt.parse(newOpts); err != nil {
 				jaegerlog.Error(err, "name", j.Name, "method", "Option.Parse")
+				return err
 			}
 		}
 	}
+
+	return nil
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-jaegertracing-io-v1-jaeger,mutating=false,failurePolicy=fail,sideEffects=None,groups=jaegertracing.io,resources=jaegers,verbs=create;update,versions=v1,name=vjaeger.kb.io,admissionReviewVersions={v1}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (j *Jaeger) ValidateCreate() (admission.Warnings, error) {
+func (j *Jaeger) ValidateCreate(ctx context.Context, _ *Jaeger) (admission.Warnings, error) {
 	jaegerlog.Info("validate create", "name", j.Name)
-	return j.ValidateUpdate(nil)
+	return j.ValidateUpdate(ctx, nil, nil)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (j *Jaeger) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
+func (j *Jaeger) ValidateUpdate(ctx context.Context, _, _ *Jaeger) (admission.Warnings, error) {
 	jaegerlog.Info("validate update", "name", j.Name)
 
 	if ShouldInjectOpenShiftElasticsearchConfiguration(j.Spec.Storage) && j.Spec.Storage.Elasticsearch.DoNotProvision {
 		// check if ES instance exists
 		es := &esv1.Elasticsearch{}
-		err := cl.Get(context.Background(), types.NamespacedName{
+		err := cl.Get(ctx, types.NamespacedName{
 			Namespace: j.Namespace,
 			Name:      j.Spec.Storage.Elasticsearch.Name,
 		}, es)
@@ -115,7 +116,7 @@ func (j *Jaeger) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (j *Jaeger) ValidateDelete() (admission.Warnings, error) {
+func (j *Jaeger) ValidateDelete(_ context.Context, _ *Jaeger) (admission.Warnings, error) {
 	jaegerlog.Info("validate delete", "name", j.Name)
 	return nil, nil
 }
